@@ -1,0 +1,193 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum AdminRole {
+  SuperAdmin
+  ContentEditor
+  SalesInbox
+}
+
+enum InquiryStatus {
+  New
+  InReview
+  Replied
+  Closed
+}
+
+enum MediaType {
+  image
+  video
+}
+
+model ProductCategory {
+  id          String    @id @default(uuid())
+  slug        String    @unique
+  nameEn      String
+  nameAr      String
+  descriptionEn String
+  descriptionAr String
+  image       String?
+  sortOrder   Int       @default(0)
+  isPublished Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    Product[]
+}
+
+model Product {
+  id              String              @id @default(uuid())
+  categoryId      String
+  category        ProductCategory     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  slug            String              @unique
+  titleEn         String
+  titleAr         String
+  shortDescriptionEn String
+  shortDescriptionAr String
+  descriptionEn   String
+  descriptionAr   String
+  availabilityNoteEn String
+  availabilityNoteAr String
+  isFeatured      Boolean             @default(false)
+  isPublished     Boolean             @default(false)
+  sortOrder       Int                 @default(0)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  specifications  ProductSpecification[]
+  media           MediaAsset[]
+  inquiries       Inquiry[]
+  relatedFrom     ProductRelation[]   @relation("relatedFrom")
+  relatedTo       ProductRelation[]   @relation("relatedTo")
+  @@index([categoryId, isPublished])
+  @@index([isFeatured, isPublished])
+}
+
+model ProductSpecification {
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  labelEn   String
+  labelAr   String
+  valueEn   String
+  valueAr   String
+  sortOrder Int      @default(0)
+  @@index([productId, sortOrder])
+}
+
+model ProductRelation {
+  fromId String
+  toId   String
+  from   Product @relation("relatedFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to     Product @relation("relatedTo", fields: [toId], references: [id], onDelete: Cascade)
+  @@id([fromId, toId])
+}
+
+model MediaAsset {
+  id          String    @id @default(uuid())
+  type        MediaType
+  url         String
+  pathname    String?
+  mimeType    String
+  size        Int
+  altEn       String
+  altAr       String
+  captionEn   String?
+  captionAr   String?
+  category    String?
+  approved    Boolean   @default(false)
+  sortOrder   Int       @default(0)
+  productId   String?
+  product     Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  @@index([productId, approved])
+  @@index([category, approved])
+}
+
+model Inquiry {
+  id          String        @id @default(uuid())
+  name        String
+  company     String
+  phone       String
+  email       String?
+  category    String
+  productSlug String?
+  productId   String?
+  product     Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+  source      String?
+  message     String
+  locale      String        @default("en")
+  status      InquiryStatus @default(New)
+  salesNotes  String?
+  lastEditedById String?
+  lastEditedBy AdminUser? @relation("inquiryEdits", fields: [lastEditedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  @@index([status, createdAt])
+  @@index([productId])
+}
+
+model AdminUser {
+  id           String    @id @default(uuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         AdminRole @default(ContentEditor)
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  auditLogs    AuditLog[]
+  inquiryEdits Inquiry[] @relation("inquiryEdits")
+  @@index([role, isActive])
+}
+
+model AuditLog {
+  id        String    @id @default(uuid())
+  actorId   String?
+  actor     AdminUser? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime  @default(now())
+  @@index([createdAt])
+  @@index([entity, entityId])
+}
+
+model AnalyticsEvent {
+  id          String   @id @default(uuid())
+  event       String
+  path        String?
+  locale      String   @default("en")
+  category    String?
+  productSlug String?
+  createdAt   DateTime @default(now())
+  @@index([event, createdAt])
+}
+
+model RateLimitBucket {
+  id          String   @id @default(uuid())
+  keyHash     String   @unique
+  windowStart DateTime
+  count       Int      @default(0)
+  @@index([windowStart])
+}
+
+model SiteSettings {
+  id                 String   @id @default("singleton")
+  phone              String
+  whatsapp           String
+  address            String
+  mapUrl             String?
+  email              String?
+  socialLinks        Json?
+  legalRegistration  String?
+  updatedAt          DateTime @updatedAt
+}

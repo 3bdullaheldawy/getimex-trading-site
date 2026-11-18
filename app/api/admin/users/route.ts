@@ -1,0 +1,10 @@
+import { NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
+import { prisma, databaseConfigured } from "@/lib/db";
+import { requirePermission } from "@/lib/permissions";
+import { audit } from "@/lib/audit";
+import { userInputSchema } from "@/lib/validation/admin";
+
+export async function GET() { try { await requirePermission("users"); if (!databaseConfigured()) return NextResponse.json({ error: "Database is not configured" }, { status: 503 }); const data = await prisma.adminUser.findMany({ select: { id: true, name: true, email: true, role: true, isActive: true, lastLoginAt: true, createdAt: true }, orderBy: { createdAt: "asc" } }); return NextResponse.json({ data, meta: { total: data.length } }); } catch (error) { const forbidden = error instanceof Error && error.message === "FORBIDDEN"; return NextResponse.json({ error: forbidden ? "Forbidden" : "Unauthorized" }, { status: forbidden ? 403 : 401 }); } }
+
+export async function POST(request: Request) { try { const actor = await requirePermission("users"); if (!databaseConfigured()) return NextResponse.json({ error: "Database is not configured" }, { status: 503 }); const parsed = userInputSchema.safeParse(await request.json().catch(() => null)); if (!parsed.success || !parsed.data.password) return NextResponse.json({ error: "A password of at least 12 characters is required", issues: parsed.success ? undefined : parsed.error.flatten() }, { status: 400 }); const data = await prisma.adminUser.create({ data: { name: parsed.data.name, email: parsed.data.email.toLowerCase(), role: parsed.data.role, isActive: parsed.data.isActive, passwordHash: await bcrypt.hash(parsed.data.password, 12) }, select: { id: true, name: true, email: true, role: true, isActive: true } }); await audit(actor.id, "create", "AdminUser", data.id); return NextResponse.json({ data }, { status: 201 }); } catch (error) { const message = error instanceof Error ? error.message : ""; return NextResponse.json({ error: message === "FORBIDDEN" ? "Forbidden" : message === "UNAUTHORIZED" ? "Unauthorized" : "User already exists" }, { status: message === "FORBIDDEN" ? 403 : message === "UNAUTHORIZED" ? 401 : 409 }); } }
